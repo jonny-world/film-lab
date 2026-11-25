@@ -1,8 +1,8 @@
-import { FilmGL, parseCube, FORMATS, SPEEDS } from './gl.js?v=2.3.0';
-import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.3.0';
+import { FilmGL, parseCube, FORMATS, SPEEDS } from './gl.js?v=2.3.1';
+import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.3.1';
 
 const $ = (s) => document.querySelector(s);
-const VERSION = '2.3.0', BUILD_DATE = '25 Nov 2026';
+const VERSION = '2.3.1', BUILD_DATE = '25 Nov 2026';
 
 // ---------------------------------------------------------------- controls
 // ui value → shader param. Defaults reproduce the Dehancer render this look was fitted to.
@@ -45,7 +45,7 @@ const SECTIONS = [
 ];
 function sgn(v) { return v > 0 ? `+${v}` : `${v}`; }
 const CONTROLS = SECTIONS.flatMap(s => s.controls);
-const KEY = 'film-lab-v5';
+const KEY = 'film-lab-v6';
 const state = { ui: {}, border: true, compare: false, stock: 'yosemite', format: '16mm', speed: '250D', open: {} };
 function loadSettings() {
   for (const c of CONTROLS) state.ui[c.id] = c.def;

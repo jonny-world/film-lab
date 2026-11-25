@@ -139,16 +139,16 @@ float dye(vec2 px, float r, uint salt){
 // Each dye layer: fine and coarse emulsions; shadows are dominated by the coarse (fast) grains.
 float layerGrain(vec2 px, float s, float e, uint salt){
   float tc = dye(px, u_rc*s, salt), tf = dye(px, u_rf*s, salt + 101u);
-  float wc = mix(0.2, 0.85, 1. - smoothstep(-3., 1., e));
+  float wc = mix(0.2, 0.6, 1. - smoothstep(-3., 1., e));
   return (wc*tc + (1. - wc)*tf)/sqrt(wc*wc + (1. - wc)*(1. - wc));
 }
 // grain amount per tonal zone (stops of exposure), already compensated for the film curve
 float zoneAmp(float e, float Y){
   float ws = 1. - smoothstep(-3.5, -1.5, e), wh = smoothstep(0.2, 1.6, e), wm = max(1. - ws - wh, 0.);
-  return (ws*u_gz.x + wm*u_gz.y + wh*u_gz.z)*smoothstep(-10., -7., e)*(1. - 0.85*smoothstep(0.82, 1.0, Y));
+  return (ws*u_gz.x + wm*u_gz.y + wh*u_gz.z)*smoothstep(-8., -5.5, e)*(1. - 0.85*smoothstep(0.82, 1.0, Y));
 }
 vec3 expand(vec3 c){
-  vec3 b = u_base*u_expB; float w = u_expW*0.1; vec3 s = vec3(0.025);
+  vec3 b = (u_base + 0.14)*u_expB; float w = u_expW*0.15; vec3 s = vec3(0.025);
   vec3 d = c - b, g = 0.5*(d + sqrt(d*d + s*s)), g0 = 0.5*(-b + sqrt(b*b + s*s));
   vec3 d1 = 1. - w - b, g1 = 0.5*(d1 + sqrt(d1*d1 + s*s));
   vec3 y = (g - g0)/(g1 - g0);
@@ -309,7 +309,8 @@ export class FilmGL {
     const rg = G.grain * SP.size * P.gsize * pxPerOut, ss = rg * 0.75 < 1.2 ? 2 : 1;
     gl.uniform1f(u.u_rc, rg * 1.5); gl.uniform1f(u.u_rf, rg * 0.75); gl.uniform1f(u.u_ss, ss); gl.uniform1f(u.u_gmix, Math.pow(1 - P.gchroma, 1.5));
     // per-zone amounts: target visible grain (encoded units) ÷ film-curve slope at that zone → stops of exposure
-    const amt = P.grain * G.amp * SP.amp, sl = this.slopes, T = [3.4, 6.8, 7.4].map(x => x / 255);
+    // target visible grain per zone (4K, 8-bit): shadows ≈ ¼ of highlights (modern negative + print), mids ≈ ⅔
+    const amt = P.grain * G.amp * SP.amp, sl = this.slopes, T = [1.5, 5.2, 7.6].map(x => x / 255);
     const gz = [P.gsh, P.gmid, P.ghi].map((v, i) => Math.min(1.2, amt * v * T[i] / Math.max(sl[i], 0.02)));
     gl.uniform3fv(u.u_gz, gz); gl.uniform1f(u.u_grainOn, amt > 0 ? 1 : 0);
     gl.uniform3fv(u.u_base, this.lutBlack); gl.uniform1f(u.u_expB, P.expB ?? 0); gl.uniform1f(u.u_expW, P.expW ?? 0);
