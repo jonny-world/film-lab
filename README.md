@@ -7,10 +7,10 @@ Film-look grading for iPhone video, running entirely in Safari: no app, no uploa
 ## What it does
 - Pick a clip from Photos → live WebGL2 preview; tap the picture for 100%, **Before / after** toggle
 - **Film:** stock picker (fitted Dehancer stocks) + strength; import your own `.cube`
-- **Colour** (applied before the film stock): exposure, temperature, tint, contrast, highlights, shadows, saturation
+- **Adjust** (applied before the film stock): exposure, temperature, tint, contrast, highlights, shadows, blacks, saturation
 - **Halation & bloom:** amount and size, computed from scene highlights through a multi-scale pyramid, before the film curve
-- **Grain:** fresh noise every frame in three dye layers, applied in exposure (negative density) before the film curve, so the stock's toe and shoulder shape it; amount, size, colour, tone balance
-- **Lens & gate:** softness, vignette, rounded film border
+- **Grain:** procedural dye clouds (soft, semi-transparent, varied in size) that develop with exposure like a negative, so grain is strongest in upper mids/highlights and rolls off near white; new grain every frame; 35mm / 2-perf / 16mm formats; amount, size, colour, tone balance
+- **Lens & gate:** film softness (red layer softest, as in real colour negative), developer edge effect, vignette, rounded film border
 - Export: frame-exact decode (WebCodecs) → WebGL2 → H.264 (HEVC fallback) MP4 at source resolution and timing; original AAC audio copied byte-for-byte; date/location/camera metadata kept. Save via the share sheet.
 - About: version, update check, share the current LUT
 

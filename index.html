@@ -72,6 +72,8 @@
   .chip small { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; }
   .chip.on { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
   .stockbar { display: flex; gap: 8px; padding-bottom: 4px; }
+  .gauges { display: flex; gap: 8px; padding: 0 0 10px; }
+  .chip.gauge { min-width: 0; flex: 1; text-align: center; padding: 10px 6px; }
   .about { margin: 8px 12px 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; font-size: 13px; color: var(--dim); }
   .about b.v { color: var(--text); font: 600 13px var(--mono); }
   .about .line { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
@@ -100,7 +102,7 @@
 <section id="empty">
   <div class="gate"></div>
   <h1>Grade a clip</h1>
-  <p>Film stocks, halation, bloom, grain and a film gate. Everything runs on this phone.</p>
+  <p>Film stocks, 35mm / 2-perf / 16mm grain, halation, bloom and a film gate. Everything runs on this phone.</p>
   <label class="pick">Choose a video<input id="pick" type="file" accept="video/*"></label>
 </section>
 
@@ -157,6 +159,6 @@
   </div>
 </template>
 <video id="video" playsinline webkit-playsinline muted loop preload="auto"></video>
-<script type="module" src="js/app.js?v=2.0.0"></script>
+<script type="module" src="js/app.js?v=2.1.0"></script>
 </body>
 </html>
