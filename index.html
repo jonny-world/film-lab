@@ -14,62 +14,69 @@
 <link rel="manifest" href="manifest.webmanifest">
 <title>film-lab</title>
 <style>
-  :root {
-    --bg: #0d0f13; --panel: #15181e; --line: #262a33; --text: #ece6dc; --dim: #8d8a84;
-    --amber: #f0a64a; --amber-dim: #6b4a24; --teal: #5fb3b3;
-    --mono: ui-monospace, "SF Mono", Menlo, monospace;
-  }
+  :root { --bg: #0d0f13; --panel: #15181e; --line: #262a33; --text: #ece6dc; --dim: #8d8a84; --amber: #f0a64a; --teal: #5fb3b3; --mono: ui-monospace, "SF Mono", Menlo, monospace; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
-  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); min-height: 100vh; }
-  header { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 16px 10px; }
-  .mark { font-weight: 700; letter-spacing: .02em; font-size: 17px; }
-  .mark i { font-style: normal; color: var(--amber); }
+  body { padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left); min-height: 100vh; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  header { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 16px 8px; }
+  .mark { font-weight: 700; letter-spacing: .02em; font-size: 17px; } .mark i { font-style: normal; color: var(--amber); }
   .sub { font: 11px var(--mono); color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+  #updBadge { color: var(--amber); }
   #warn { margin: 0 16px 10px; padding: 10px 12px; border: 1px solid #6b2b24; background: #2a1412; border-radius: 10px; font-size: 13px; }
-  /* empty state */
-  #empty { padding: 8vh 24px; text-align: center; }
-  .gate { margin: 0 auto 28px; width: min(78vw, 340px); aspect-ratio: 16/9; border-radius: 14px; border: 7px solid #07080a;
-          background: radial-gradient(120% 90% at 30% 20%, #3c6f78 0%, #24434a 35%, #1b2a26 60%, #3a2a1c 100%); box-shadow: 0 0 0 1px var(--line), inset 0 0 30px rgba(0,0,0,.55); position: relative; overflow: hidden; }
-  .gate::after { content: ""; position: absolute; inset: 0; background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='.35'/></svg>"); mix-blend-mode: overlay; }
+  #empty { padding: 7vh 24px 4vh; text-align: center; }
+  .gate { margin: 0 auto 28px; width: min(78vw, 340px); aspect-ratio: 16/9; border-radius: 14px; border: 7px solid #07080a; background: radial-gradient(120% 90% at 30% 20%, #3c6f78 0%, #24434a 35%, #1b2a26 60%, #3a2a1c 100%); box-shadow: 0 0 0 1px var(--line), inset 0 0 30px rgba(0,0,0,.55); }
   #empty h1 { font-size: 22px; margin: 0 0 8px; font-weight: 650; }
   #empty p { color: var(--dim); margin: 0 auto 26px; max-width: 320px; font-size: 14px; }
   .pick { display: inline-block; position: relative; overflow: hidden; background: var(--amber); color: #1a1006; font-weight: 650; padding: 14px 26px; border-radius: 999px; font-size: 16px; }
-  .pick input { position: absolute; inset: 0; opacity: 0; font-size: 100px; }
-  /* editor */
-  #stage { padding: 0 12px; position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: 8px; }
+  .pick input, .filebtn input { position: absolute; inset: 0; opacity: 0; font-size: 100px; }
+  #stage { padding: 0 12px 6px; position: sticky; top: 0; z-index: 3; background: var(--bg); }
   #preview { display: block; margin: 0 auto; border-radius: 6px; background: #000; touch-action: manipulation; }
   #video { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
-  .transport { display: flex; gap: 8px; align-items: center; padding: 10px 4px 0; }
+  .transport { display: flex; gap: 8px; align-items: center; padding: 8px 0 0; }
   .btn { appearance: none; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 7px 12px; font: 13px -apple-system, sans-serif; white-space: nowrap; }
   .btn.on { background: var(--amber); color: #1a1006; border-color: var(--amber); }
+  .btn.small { padding: 6px 11px; font-size: 12px; }
+  .btn:disabled { opacity: .4; }
   #scrub { flex: 1; }
   #time { font: 11px var(--mono); color: var(--dim); min-width: 74px; text-align: right; }
-  .fileline { display: flex; justify-content: space-between; gap: 10px; padding: 6px 4px 0; font: 11px var(--mono); color: var(--dim); }
+  .fileline { display: flex; justify-content: space-between; gap: 10px; padding: 6px 2px 0; font: 11px var(--mono); color: var(--dim); }
   .fileline span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .panel { margin: 6px 12px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 6px 14px; }
-  .row { display: grid; grid-template-columns: 88px 1fr 64px; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid #1d2027; }
-  .row:last-child { border-bottom: 0; }
-  .row .name { font-size: 14px; color: var(--dim); user-select: none; -webkit-user-select: none; }
+  .filebtn { position: relative; overflow: hidden; }
+  #sections { margin: 4px 12px 0; display: flex; flex-direction: column; gap: 8px; }
+  details.sec { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  details.sec > summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 14px; font-weight: 600; font-size: 15px; }
+  details.sec > summary::-webkit-details-marker { display: none; }
+  details.sec .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); visibility: hidden; }
+  details.sec.changed .dot { visibility: visible; }
+  details.sec .chev { margin-left: auto; width: 9px; height: 9px; border-right: 2px solid var(--dim); border-bottom: 2px solid var(--dim); transform: rotate(45deg); transition: transform .2s; }
+  details.sec[open] .chev { transform: rotate(-135deg); }
+  details.sec .body { padding: 0 14px 12px; }
+  .row { display: grid; grid-template-columns: 104px 1fr 50px; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid #1d2027; }
+  .row .name { font-size: 13.5px; color: var(--dim); }
   .row.changed .name { color: var(--text); }
   .row output { font: 12px var(--mono); text-align: right; color: var(--dim); }
   .row.changed output { color: var(--amber); }
   input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; margin: 0; }
   input[type=range]::-webkit-slider-runnable-track { height: 3px; background: var(--line); border-radius: 3px; }
-  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9.5px; border-radius: 50%; background: var(--text); border: 0; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; margin-top: -9.5px; border-radius: 50%; background: var(--text); box-shadow: 0 1px 4px rgba(0,0,0,.6); }
   input[type=range]:disabled { opacity: .4; }
-  .toggle { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #1d2027; }
-  .toggle .name { color: var(--text); font-size: 14px; }
-  .switch { position: relative; width: 50px; height: 30px; }
-  .switch input { opacity: 0; width: 0; height: 0; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-top: 1px solid #1d2027; }
+  .toggle .name { font-size: 13.5px; }
+  .switch { position: relative; width: 50px; height: 30px; } .switch input { opacity: 0; width: 0; height: 0; }
   .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 30px; transition: .2s; }
   .switch span::before { content: ""; position: absolute; width: 26px; height: 26px; left: 2px; top: 2px; background: var(--text); border-radius: 50%; transition: .2s; }
-  .switch input:checked + span { background: var(--amber); }
-  .switch input:checked + span::before { transform: translateX(20px); }
-  .hint { font-size: 12px; color: var(--dim); padding: 10px 0 8px; }
-  .actions { margin: 0 12px 14px; display: flex; flex-direction: column; gap: 10px; }
-  .big { appearance: none; border: 0; border-radius: 14px; padding: 16px; font: 650 16px -apple-system, sans-serif; background: var(--amber); color: #1a1006; width: 100%; }
-  .big.ghost { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  .switch input:checked + span { background: var(--amber); } .switch input:checked + span::before { transform: translateX(20px); }
+  .body > .btn.small { margin-top: 8px; }
+  .stocks { display: flex; gap: 8px; overflow-x: auto; padding: 2px 0 10px; scrollbar-width: none; }
+  .chip { flex: none; appearance: none; text-align: left; border: 1px solid var(--line); background: #1b1f26; color: var(--text); border-radius: 12px; padding: 9px 12px; font: 14px -apple-system, sans-serif; min-width: 104px; }
+  .chip small { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; }
+  .chip.on { border-color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
+  .stockbar { display: flex; gap: 8px; padding-bottom: 4px; }
+  .about { margin: 8px 12px 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; font-size: 13px; color: var(--dim); }
+  .about b.v { color: var(--text); font: 600 13px var(--mono); }
+  .about .line { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  #upd { margin-top: 8px; min-height: 1em; } #upd b { color: var(--amber); }
+  .result-wrap { margin: 8px 12px 0; display: flex; flex-direction: column; gap: 8px; }
   #progress { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
   .track { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; margin-top: 8px; }
   #pbar { height: 100%; width: 0; background: var(--amber); transition: width .2s; }
@@ -78,21 +85,22 @@
   #result .t { font-weight: 650; margin-bottom: 2px; }
   #rinfo { font: 12px var(--mono); color: var(--dim); margin-bottom: 12px; }
   #result a { color: var(--teal); font-size: 13px; display: inline-block; margin-top: 10px; }
-  footer { padding: 6px 16px 30px; font: 11px var(--mono); color: #5b5955; display: flex; justify-content: space-between; }
-  footer a { color: #8d8a84; }
-  .pick2 { position: relative; overflow: hidden; }
-  .pick2 input { position: absolute; inset: 0; opacity: 0; }
-  body.busy #stage { opacity: .85; }
+  #diag { font: 10px var(--mono); color: #5b6b66; margin-top: 8px; }
+  .bar { position: sticky; bottom: 0; z-index: 4; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: linear-gradient(to top, var(--bg) 70%, rgba(13,15,19,0)); margin-top: 8px; }
+  .big { appearance: none; border: 0; border-radius: 14px; padding: 16px; font: 650 16px -apple-system, sans-serif; background: var(--amber); color: #1a1006; width: 100%; }
+  .big.ghost { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  .foot { padding: 14px 16px 24px; font: 11px var(--mono); color: #5b5955; }
+  body:not(.editing) .bar { display: none; }
 </style>
 </head>
 <body>
-<header><div class="mark">film<i>·</i>lab</div><div class="sub">v<span id="ver"></span> · iPhone SDR</div></header>
+<header><div class="mark">film<i>·</i>lab</div><div class="sub">v<span id="ver"></span> <span id="updBadge" hidden>· update</span></div></header>
 <div id="warn" hidden>This browser can't export (no WebCodecs encoder). Preview still works.</div>
 
 <section id="empty">
   <div class="gate"></div>
   <h1>Grade a clip</h1>
-  <p>Teal skies, warm highlights, halation, grain and a film gate — matched to your Dehancer look. Everything runs on this phone.</p>
+  <p>Film stocks, halation, bloom, grain and a film gate. Everything runs on this phone.</p>
   <label class="pick">Choose a video<input id="pick" type="file" accept="video/*"></label>
 </section>
 
@@ -105,36 +113,50 @@
       <span id="time">0:00</span>
     </div>
     <div class="transport">
-      <button class="btn" id="compare">Hold: original</button>
-      <button class="btn" id="zoom" title="Tap the picture to toggle 100%">Fit</button>
+      <button class="btn" id="compare">Before / after</button>
+      <button class="btn" id="zoom">Fit</button>
       <button class="btn" id="mute">Sound off</button>
-      <label class="btn pick2" id="pick2l">Change<input id="pick2" type="file" accept="video/*"></label>
+      <label class="btn filebtn">Change<input id="pick2" type="file" accept="video/*"></label>
     </div>
     <div class="fileline"><span id="fname"></span><span id="meta"></span></div>
   </div>
-
-  <div class="panel">
-    <div id="sliders"></div>
-    <div class="toggle"><span class="name">Film border</span><label class="switch"><input id="border" type="checkbox" checked><span></span></label></div>
-    <div class="hint">Tap the picture for a 100% view. Double-tap a slider name to reset it. <button class="btn" id="reset" style="float:right;margin-top:-4px">Reset all</button></div>
-  </div>
-
-  <div class="actions">
-    <button class="big" id="export">Export MP4</button>
-    <button class="big ghost" id="cancel" hidden>Cancel export</button>
+  <div id="sections"></div>
+  <div class="result-wrap">
     <div id="progress" hidden><div id="ptext"></div><div class="track"><div id="pbar"></div></div></div>
     <div id="result" hidden>
       <div class="t">Export ready</div>
       <div id="rinfo"></div>
       <button class="big" id="share">Save / Share…</button>
       <a id="download" href="#">Download file instead</a>
-      <div id="diag" style="font:10px var(--mono);color:#5b6b66;margin-top:8px"></div>
+      <div id="diag"></div>
     </div>
   </div>
 </section>
 
-<footer><span>Keep Safari open while exporting.</span><a href="assets/film-lab.cube" download>LUT .cube</a></footer>
+<div class="about">
+  <div>film-lab <b class="v" id="ver2"></b> · <span id="date"></span></div>
+  <div id="upd"></div>
+  <div class="line">
+    <button class="btn small" id="checkUpd">Check for update</button>
+    <button class="btn small" id="shareLut">Share current LUT (.cube)</button>
+    <button class="btn small" id="resetAll">Reset all settings</button>
+  </div>
+</div>
+<div class="foot">Video never leaves this phone. Keep Safari open while exporting.</div>
+
+<div class="bar">
+  <button class="big" id="export">Export MP4</button>
+  <button class="big ghost" id="cancel" hidden>Cancel export</button>
+</div>
+
+<template id="stockTpl">
+  <div class="stocks" id="stocks"></div>
+  <div class="stockbar">
+    <label class="btn small filebtn">+ Import .cube<input id="importLut" type="file" accept=".cube,application/octet-stream,text/plain"></label>
+    <button class="btn small" id="removeLut" hidden>Remove this LUT</button>
+  </div>
+</template>
 <video id="video" playsinline webkit-playsinline muted loop preload="auto"></video>
-<script type="module" src="js/app.js?v=1.0.0"></script>
+<script type="module" src="js/app.js?v=2.0.0"></script>
 </body>
 </html>
