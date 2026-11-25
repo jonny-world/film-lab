@@ -1,8 +1,8 @@
-import { FilmGL, parseCube, GAUGES } from './gl.js?v=2.2.0';
-import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.2.0';
+import { FilmGL, parseCube, FORMATS, SPEEDS } from './gl.js?v=2.3.0';
+import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.3.0';
 
 const $ = (s) => document.querySelector(s);
-const VERSION = '2.2.0', BUILD_DATE = '25 Nov 2026';
+const VERSION = '2.3.0', BUILD_DATE = '25 Nov 2026';
 
 // ---------------------------------------------------------------- controls
 // ui value → shader param. Defaults reproduce the Dehancer render this look was fitted to.
@@ -10,6 +10,8 @@ const pw = (base, ref, e) => (v) => base * Math.pow(v / ref, e);
 const SECTIONS = [
   { id: 'film', title: 'Film', open: true, controls: [
     { id: 'strength', label: 'Strength', min: 0, max: 100, step: 1, def: 100, fmt: v => `${v}%`, map: v => v / 100 },
+    { id: 'expB', label: 'Expand blacks', min: 0, max: 100, step: 1, def: 40, fmt: v => v, map: v => v / 100 },
+    { id: 'expW', label: 'Expand whites', min: 0, max: 100, step: 1, def: 0, fmt: v => v, map: v => v / 100 },
   ] },
   { id: 'colour', title: 'Adjust', controls: [
     { id: 'ev', label: 'Exposure', min: -2, max: 2, step: 0.05, def: 0, fmt: v => `${v > 0 ? '+' : ''}${(+v).toFixed(2)}`, map: v => +v },
@@ -27,34 +29,36 @@ const SECTIONS = [
     { id: 'bloom', label: 'Bloom', min: 0, max: 100, step: 1, def: 0, fmt: v => v, map: pw(0.15, 30, 1.5) },
     { id: 'bloomR', label: 'Bloom size', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => 54 * Math.pow(2, (v - 50) / 25) },
   ] },
-  { id: 'grainS', title: 'Grain', gauge: true, controls: [
-    { id: 'grain', label: 'Amount', min: 0, max: 100, step: 1, def: 35, fmt: v => v, map: pw(0.09, 35, 1.2) },
-    { id: 'gsize', label: 'Size', min: 0.5, max: 2.5, step: 0.05, def: 1, fmt: v => (+v).toFixed(2), map: v => +v },
-    { id: 'gchroma', label: 'Colour', min: 0, max: 100, step: 1, def: 25, fmt: v => v, map: v => v / 100 },
-    { id: 'gtone', label: 'Tone balance', min: -100, max: 100, step: 1, def: 0, fmt: sgn, map: v => v / 100 },
+  { id: 'grainS', title: 'Grain', profile: true, controls: [
+    { id: 'grain', label: 'Amount', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => v / 50 },
+    { id: 'gsize', label: 'Size', min: 0.5, max: 2, step: 0.05, def: 1, fmt: v => (+v).toFixed(2), map: v => +v },
+    { id: 'gsh', label: 'Shadows', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => v / 50 },
+    { id: 'gmid', label: 'Midtones', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => v / 50 },
+    { id: 'ghi', label: 'Highlights', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => v / 50 },
+    { id: 'gchroma', label: 'Chroma', min: 0, max: 100, step: 1, def: 25, fmt: v => v, map: v => v / 100 },
+    { id: 'res', label: 'Film resolution', min: 0, max: 100, step: 1, def: 60, fmt: v => v, map: v => (100 - v) / 100 * 3.0 },
   ] },
   { id: 'lens', title: 'Lens & gate', controls: [
-    { id: 'soft', label: 'Softness', min: 0, max: 100, step: 1, def: 40, fmt: v => v, map: v => v / 100 * 3.0 },
     { id: 'adj', label: 'Edge effect', min: 0, max: 100, step: 1, def: 18, fmt: v => v, map: v => v / 100 },
     { id: 'vig', label: 'Vignette', min: 0, max: 100, step: 1, def: 33, fmt: v => v, map: v => v / 100 * 0.5 },
   ], toggle: true },
 ];
 function sgn(v) { return v > 0 ? `+${v}` : `${v}`; }
 const CONTROLS = SECTIONS.flatMap(s => s.controls);
-const KEY = 'film-lab-v4';
-const state = { ui: {}, border: true, compare: false, stock: 'yosemite', gauge: '16mm', open: {} };
+const KEY = 'film-lab-v5';
+const state = { ui: {}, border: true, compare: false, stock: 'yosemite', format: '16mm', speed: '250D', open: {} };
 function loadSettings() {
   for (const c of CONTROLS) state.ui[c.id] = c.def;
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || '{}');
     for (const c of CONTROLS) if (typeof s.ui?.[c.id] === 'number') state.ui[c.id] = s.ui[c.id];
-    if (typeof s.border === 'boolean') state.border = s.border; if (s.stock) state.stock = s.stock; if (s.open) state.open = s.open; if (GAUGES[s.gauge]) state.gauge = s.gauge;
+    if (typeof s.border === 'boolean') state.border = s.border; if (s.stock) state.stock = s.stock; if (s.open) state.open = s.open; if (FORMATS[s.format]) state.format = s.format; if (SPEEDS[s.speed]) state.speed = s.speed;
   } catch {}
 }
-function saveSettings() { try { localStorage.setItem(KEY, JSON.stringify({ ui: state.ui, border: state.border, stock: state.stock, gauge: state.gauge, open: state.open })); } catch {} }
+function saveSettings() { try { localStorage.setItem(KEY, JSON.stringify({ ui: state.ui, border: state.border, stock: state.stock, format: state.format, speed: state.speed, open: state.open })); } catch {} }
 function params() {
-  const P = {}; for (const c of CONTROLS) P[c.id] = c.map(state.ui[c.id]); P.border = state.border; P.gauge = state.gauge;
-  if (state.compare) Object.assign(P, { strength: 0, ev: 0, temp: 0, tint: 0, con: 0, hl: 0, sh: 0, bl: 0, sat: 0, hal: 0, bloom: 0, grain: 0, soft: 0, adj: 0, vig: 0, border: false });
+  const P = {}; for (const c of CONTROLS) P[c.id] = c.map(state.ui[c.id]); P.border = state.border; P.format = state.format; P.speed = state.speed; P.soft = P.res;
+  if (state.compare) Object.assign(P, { strength: 0, expB: 0, expW: 0, ev: 0, temp: 0, tint: 0, con: 0, hl: 0, sh: 0, bl: 0, sat: 0, hal: 0, bloom: 0, grain: 0, soft: 0, adj: 0, vig: 0, border: false });
   return P;
 }
 function buildControls() {
@@ -65,7 +69,12 @@ function buildControls() {
     d.addEventListener('toggle', () => { state.open[sec.id] = d.open; saveSettings(); });
     const body = d.querySelector('.body');
     if (sec.id === 'film') body.appendChild($('#stockTpl').content.cloneNode(true));
-    if (sec.gauge) { const g = document.createElement('div'); g.className = 'gauges'; for (const [id, G] of Object.entries(GAUGES)) { const b = document.createElement('button'); b.className = 'chip gauge' + (id === state.gauge ? ' on' : ''); b.textContent = G.name; b.dataset.id = id; b.addEventListener('click', () => { state.gauge = id; g.querySelectorAll('.gauge').forEach(x => x.classList.toggle('on', x.dataset.id === id)); saveSettings(); requestPreview(); }); g.appendChild(b); } body.appendChild(g); }
+    if (sec.profile) for (const [key, set] of [['format', FORMATS], ['speed', SPEEDS]]) {
+      const g = document.createElement('div'); g.className = 'gauges';
+      for (const [id, G] of Object.entries(set)) { const b = document.createElement('button'); b.className = `chip gauge ${key}` + (id === state[key] ? ' on' : ''); b.textContent = G.name; b.dataset.id = id;
+        b.addEventListener('click', () => { state[key] = id; g.querySelectorAll('.gauge').forEach(x => x.classList.toggle('on', x.dataset.id === id)); saveSettings(); requestPreview(); }); g.appendChild(b); }
+      body.appendChild(g);
+    }
     for (const c of sec.controls) {
       const row = document.createElement('div'); row.className = 'row';
       row.innerHTML = `<span class="name">${c.label}</span><input type="range" min="${c.min}" max="${c.max}" step="${c.step}"><output></output>`;
@@ -320,7 +329,7 @@ async function boot() {
   $('#export').addEventListener('click', runExport); $('#cancel').addEventListener('click', () => { cancelExport = true; });
   $('#share').addEventListener('click', share);
   $('#checkUpd').addEventListener('click', () => checkUpdate(true));
-  $('#resetAll').addEventListener('click', () => { for (const c of CONTROLS) { state.ui[c.id] = c.def; c.sync(); } state.gauge = '16mm'; document.querySelectorAll('.gauge').forEach(x => x.classList.toggle('on', x.dataset.id === '16mm')); state.border = true; $('#border').checked = true; saveSettings(); requestPreview(); });
+  $('#resetAll').addEventListener('click', () => { for (const c of CONTROLS) { state.ui[c.id] = c.def; c.sync(); } state.format = '16mm'; state.speed = '250D'; document.querySelectorAll('.gauge').forEach(x => x.classList.toggle('on', x.dataset.id === '16mm' || x.dataset.id === '250D')); state.border = true; $('#border').checked = true; saveSettings(); requestPreview(); });
   window.addEventListener('resize', layoutCanvas);
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); $('#warn').hidden = false; $('#warn').textContent = 'Graphics context lost — reload the page.'; });
   checkUpdate(false);
