@@ -6,14 +6,14 @@ export const LOOK = {
   HAL_T: 0.20, BLOOM_T: 0.50,
   HAL_NEAR: [1.0, 0.15, 0.04], HAL_FAR: [0.45, 0.14, 0.01], BLOOM_TINT: [1.0, 0.93, 0.84],
   VIG_P: 1.87, BORDER_RGB: [13 / 255, 15 / 255, 19 / 255],
-  LAYER_SOFT: [1.45, 1.0, 1.15],   // red record sits deepest in the emulsion → least sharp
-  LAYER_GRAIN: [1.0, 0.92, 1.12],  // relative grain size per dye layer
+  LAYER_SOFT: [1.25, 1.0, 0.875],  // light scatter per layer (red record sits deepest → softest), after ENS Louis-Lumière 500T fit
+  LAYER_GRAIN: [1.0, 1.0, 1.3],    // 500T: blue layer has the coarsest grain, red/green similar
 };
 // film gauges: grain radius (px @ 2160 short side), grain strength, softness and edge-effect scale
 export const GAUGES = {
   '35mm': { name: '35mm', grain: 1.1, amp: 1.15, soft: 1.0, adj: 1.0 },
-  '2perf': { name: '2-perf', grain: 1.65, amp: 1.2, soft: 1.15, adj: 1.3 },
-  '16mm': { name: '16mm', grain: 2.4, amp: 1.45, soft: 1.35, adj: 1.6 },
+  '2perf': { name: '2-perf', grain: 1.65, amp: 1.2, soft: 1.15, adj: 1.15 },
+  '16mm': { name: '16mm', grain: 2.4, amp: 1.45, soft: 1.35, adj: 1.3 },
 };
 
 const VS = `#version 300 es
@@ -38,8 +38,8 @@ vec3 gblur(sampler2D t, vec2 uv, vec2 step, vec3 sig){
   if (sm < 0.2) return texture(t, uv).rgb;
   int r = int(ceil(sm*3.)); vec3 s = vec3(0.), ws = vec3(0.); vec3 isg = 1./max(sig*sig, vec3(1e-4));
   for (int i=-12;i<=12;i++){ if (abs(i)>r) continue; float f = float(i); vec3 w = exp(-0.5*f*f*isg);
-    s += w*texture(t, uv + step*f).rgb; ws += w; }
-  return s/ws;
+    s += w*dec(texture(t, uv + step*f).rgb); ws += w; }
+  return enc(s/ws);
 }`;
 
 const FS_SOFTH = HEAD + BLUR + `
@@ -69,19 +69,19 @@ void main(){
 const ENERGY = `
 uniform float u_halT, u_bloomT;
 float boost(float Y){ return 1. + 3.*smoothstep(0.8, 1.0, Y); }
-vec3 energy(vec3 c){ vec3 l = dec(c); float Y = dot(l, W709); float b = boost(Y); return vec3(max(Y-u_halT,0.)*b, max(Y-u_bloomT,0.)*b, Y); }
+vec3 energy(vec3 c){ vec3 l = dec(c); float Y = dot(l, W709); float b = boost(Y); return vec3(max(Y-u_halT,0.)*b, max(Y-u_bloomT,0.)*b, pow(Y, 1./2.4)); }
 `;
 
 // 13-tap downsample. Level 0: R = halation energy, G = bloom energy, B = encoded luminance (for the edge effect)
 const FS_DOWN = HEAD + ENERGY + `
 uniform sampler2D u_img; uniform vec2 u_texel; uniform float u_first, u_scale;
-vec3 tap(vec2 off){ vec4 t = texture(u_img, v_uv + off*u_texel); return u_first > 0.5 ? energy(t.rgb) : vec3(t.rg/u_scale, 0.); }
+vec3 tap(vec2 off){ vec4 t = texture(u_img, v_uv + off*u_texel); return u_first > 0.5 ? energy(t.rgb) : vec3(t.rg/u_scale, t.b); }
 void main(){
   vec3 e = tap(vec2(0.))*0.125;
   e += (tap(vec2(-2.,2.))+tap(vec2(2.,2.))+tap(vec2(-2.,-2.))+tap(vec2(2.,-2.)))*0.03125;
   e += (tap(vec2(0.,2.))+tap(vec2(-2.,0.))+tap(vec2(2.,0.))+tap(vec2(0.,-2.)))*0.0625;
   e += (tap(vec2(-1.,1.))+tap(vec2(1.,1.))+tap(vec2(-1.,-1.))+tap(vec2(1.,-1.)))*0.125;
-  o = vec4(e.rg*u_scale, pow(max(e.b, 0.), 1./2.4), 1.);
+  o = vec4(e.rg*u_scale, e.b, 1.);
 }`;
 
 const FS_UP = HEAD + `
@@ -107,7 +107,7 @@ uniform sampler2D u_img, u_glow, u_lum, u_border; uniform sampler3D u_lut;
 uniform vec2 u_frameSize, u_outSize; uniform float u_lutN;
 uniform float u_strength, u_hal, u_bloom, u_gscale, u_adj;
 uniform vec3 u_tNear, u_tFar, u_tBloom;
-uniform float u_grain, u_gr, u_gchroma, u_gdev0, u_gdevS, u_gnorm; uniform uint u_seed; uniform vec3 u_glayer;
+uniform float u_grain, u_rc, u_rf, u_gmix, u_gdev0, u_gnorm, u_ss; uniform uint u_seed; uniform vec3 u_glayer;
 uniform float u_vig, u_vigP, u_borderOn; uniform vec3 u_borderRGB;
 float slice(float q, float D, float P){ const float C = 240.;
   if (q < C) return q; if (q > D - C) return P - (D - q); return C + (q - C)*(P - 2.*C)/max(D - 2.*C, 1.); }
@@ -117,10 +117,10 @@ vec2 borderUV(vec2 fuv){
   float s = D.y/2160.; vec2 q = p/s, Dq = D/s;
   return vec2(slice(q.x, Dq.x, 3840.), slice(q.y, Dq.y, 2160.)) / vec2(3840.,2160.);
 }
-// One dye layer of the grain: soft-edged dye clouds scattered in cells; each develops with probability p
-// (higher exposure → more developed grains → denser negative). Returns coverage minus its expected value.
-float dyeLayer(vec2 px, float r, float p, uint salt){
-  float c = 1.6*r; vec2 q = px/c; vec2 cell = floor(q); float inv = 1.;
+// Dye clouds of one emulsion: soft, semi-transparent, log-normally sized, scattered in cells; each develops with
+// probability p. Returns (coverage, expected coverage).
+vec2 dye(vec2 px, float r, float p, uint salt){
+  float c = 1.4*r; vec2 cell = floor(px/c); float inv = 1.;
   for (int j=-1;j<=1;j++) for (int i=-1;i<=1;i++){
     ivec2 id = ivec2(cell) + ivec2(i,j);
     uint h = pcg(uint(id.x + 65536) ^ pcg(uint(id.y + 65536) ^ pcg(salt ^ u_seed)));
@@ -128,12 +128,18 @@ float dyeLayer(vec2 px, float r, float p, uint salt){
     if (float(h4)*(1./4294967295.) > p) continue;
     vec2 ctr = (vec2(id) + vec2(float(h), float(h2))*(1./4294967295.))*c;
     float rad = r*exp(0.55*(float(h3)*(2./4294967295.) - 1.));
-    float w = clamp((rad - length(px - ctr))/max(0.75*rad, 0.8) + 0.5, 0., 1.);
-    inv *= 1. - 0.7*w;   // semi-transparent dye cloud
+    float w = clamp((rad - length(px - ctr))/max(0.75*rad, 0.8/u_ss) + 0.5, 0., 1.);
+    inv *= 1. - 0.7*w;
   }
-  return (1. - inv) - (1. - exp(-(1.06 + 0.24*p)*p));
+  return vec2(1. - inv, 1. - exp(-(1.35 + 0.372*p)*p));
 }
-float develop(float e){ return 0.1 + 0.9/(1. + exp(-(e - u_gdev0)/u_gdevS)); }   // 0.1 = base fog
+// One dye layer = fast coarse emulsion (develops first: shadows) + slow fine emulsion (mids/highlights).
+float layerGrain(vec2 px, float s, float e, uint salt){
+  float pf = 0.06 + 0.94/(1. + exp(-(e + 2.5 - u_gdev0)/1.2));
+  float ps = 1./(1. + exp(-(e - 1.4 - u_gdev0)/0.9));
+  vec2 a = dye(px, u_rc*s, pf, salt), b = dye(px, u_rf*s, ps, salt + 101u);
+  return 1.5*(a.x - a.y)*(1. - b.y) + (b.x - b.y)*(1. - a.y);   // thin (shadow) areas print grainy: coarse layer weighted up
+}
 void main(){
   vec2 fuv = imgUV(); vec2 fpx = fuv*u_frameSize;
   vec3 c = texture(u_img, v_uv).rgb;
@@ -147,12 +153,17 @@ void main(){
   lin += u_bloom*g.g*u_tBloom;
   // dye-cloud grain in exposure (negative density) space, before the film curve
   if (u_grain > 0.) {
-    vec2 gp = gl_FragCoord.xy;
-    vec3 e = log2(max(lin, 1e-5)/0.18); float eY = log2(max(dot(lin, W709), 1e-5)/0.18);
-    float gm = dyeLayer(gp, u_gr, develop(eY), 11u);
-    vec3 gl = vec3(gm);
-    if (u_gchroma > 0.) gl = mix(vec3(gm), vec3(dyeLayer(gp, u_gr*u_glayer.r, develop(e.r), 23u), dyeLayer(gp, u_gr*u_glayer.g, develop(e.g), 37u), dyeLayer(gp, u_gr*u_glayer.b, develop(e.b), 53u)), u_gchroma);
-    lin *= exp2(u_grain*u_gnorm*gl);
+    vec3 e = log2(max(lin, 1e-5)/0.18), g3 = vec3(0.);
+    int n = int(u_ss);
+    for (int sy=0; sy<2; sy++) for (int sx=0; sx<2; sx++) {
+      if (sx >= n || sy >= n) continue;
+      vec2 gp = gl_FragCoord.xy + (vec2(sx, sy) + 0.5)/u_ss - 0.5;
+      g3 += vec3(layerGrain(gp, u_glayer.r, e.r, 11u), layerGrain(gp, u_glayer.g, e.g, 23u), layerGrain(gp, u_glayer.b, e.b, 37u));
+    }
+    g3 /= u_ss*u_ss;
+    // layers stack in the emulsion: mix them to set how colourful the grain is
+    g3 = (g3 + u_gmix*(g3.gbr + g3.brg))/sqrt(1. + 2.*u_gmix*u_gmix);
+    lin *= exp2(u_grain*u_gnorm*g3);
   }
   lin = mix(lin, 0.9 + 0.1*tanh((lin - 0.9)/0.1), step(0.9, lin));
   c = enc(clamp(lin, 0., 1.));
@@ -255,7 +266,7 @@ export class FilmGL {
     // pyramid: level 0 always (edge effect), the rest only when glow is on
     const D = this.rt.down, U = this.rt.up, N = D.length, glow = P.hal > 0 || P.bloom > 0;
     const wn = levelWeights(P.halR * pxPerOut, N), wf = levelWeights(P.halR * 1.7 * pxPerOut, N), wb = levelWeights(P.bloomR * pxPerOut, N);
-    for (let i = 0; i < (glow ? N : 1); i++) {
+    for (let i = 0; i < (glow ? N : Math.min(2, N)); i++) {
       const srcT = i === 0 ? this.rt.b : D[i - 1];
       u = use(this.p.down, D[i]); bind(u, 'u_img', 0, srcT.t); gl.uniform2f(u.u_texel, 1 / srcT.w, 1 / srcT.h);
       gl.uniform1f(u.u_first, i === 0 ? 1 : 0); gl.uniform1f(u.u_scale, gsc); gl.uniform1f(u.u_halT, LOOK.HAL_T); gl.uniform1f(u.u_bloomT, LOOK.BLOOM_T); draw();
@@ -267,18 +278,18 @@ export class FilmGL {
     }
     // final
     u = use(this.p.final, null, W, H);
-    bind(u, 'u_img', 0, this.rt.b.t); bind(u, 'u_glow', 1, glow ? U[0].t : this.black); bind(u, 'u_lum', 2, D[0].t);
+    bind(u, 'u_img', 0, this.rt.b.t); bind(u, 'u_glow', 1, glow ? U[0].t : this.black); bind(u, 'u_lum', 2, D[Math.min(1, N - 1)].t);
     bind(u, 'u_border', 3, this.border); bind(u, 'u_lut', 4, this.lut, gl.TEXTURE_3D);
     gl.uniform2f(u.u_frameSize, frame.w, frame.h); gl.uniform2f(u.u_outSize, W, H); gl.uniform1f(u.u_lutN, this.lutN);
     gl.uniform1f(u.u_strength, P.strength); gl.uniform1f(u.u_hal, P.hal); gl.uniform1f(u.u_bloom, P.bloom); gl.uniform1f(u.u_gscale, gsc);
     gl.uniform1f(u.u_halT, LOOK.HAL_T); gl.uniform1f(u.u_bloomT, LOOK.BLOOM_T);
     gl.uniform3fv(u.u_tNear, LOOK.HAL_NEAR); gl.uniform3fv(u.u_tFar, LOOK.HAL_FAR); gl.uniform3fv(u.u_tBloom, LOOK.BLOOM_TINT);
     // edge effect fades out when the half-res level is finer than ~1 output px (preview)
-    gl.uniform1f(u.u_adj, (P.adj ?? 0) * G.adj * Math.min(1, pxPerOut));
-    // grain: radius in output px; below 0.8 px (zoomed-out preview) clamp and reduce strength like the eye would
-    const rOut = G.grain * P.gsize * pxPerOut, rUse = Math.max(rOut, 0.8);
-    gl.uniform1f(u.u_grain, P.grain * G.amp * Math.min(1, rOut / 0.8)); gl.uniform1f(u.u_gr, rUse); gl.uniform1f(u.u_gchroma, P.gchroma);
-    gl.uniform1f(u.u_gdev0, 0.3 + 1.6 * P.gtone); gl.uniform1f(u.u_gdevS, 1.5); gl.uniform1f(u.u_gnorm, 3.15);
+    gl.uniform1f(u.u_adj, (P.adj ?? 0) * G.adj * Math.min(1, pxPerOut * 2));
+    // grain: coarse (fast) and fine (slow) emulsion radii in output px; supersample 2×2 when grains are sub-pixel (preview)
+    const rg = G.grain * P.gsize * pxPerOut, ss = rg * 0.7 < 1.2 ? 2 : 1;
+    gl.uniform1f(u.u_grain, P.grain * G.amp); gl.uniform1f(u.u_rc, rg * 1.5); gl.uniform1f(u.u_rf, rg * 0.7); gl.uniform1f(u.u_ss, ss);
+    gl.uniform1f(u.u_gmix, Math.pow(1 - P.gchroma, 1.5)); gl.uniform1f(u.u_gdev0, 1.5 * P.gtone); gl.uniform1f(u.u_gnorm, 5.0);
     gl.uniform3fv(u.u_glayer, LOOK.LAYER_GRAIN); gl.uniform1ui(u.u_seed, (((seed ?? this.frameNo++) + 1) * 2654435761) >>> 0);
     gl.uniform1f(u.u_vig, P.vig); gl.uniform1f(u.u_vigP, LOOK.VIG_P); gl.uniform1f(u.u_borderOn, P.border ? 1 : 0); gl.uniform3fv(u.u_borderRGB, LOOK.BORDER_RGB);
     draw();

@@ -1,8 +1,8 @@
-import { FilmGL, parseCube, GAUGES } from './gl.js?v=2.1.0';
-import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.1.0';
+import { FilmGL, parseCube, GAUGES } from './gl.js?v=2.2.0';
+import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.2.0';
 
 const $ = (s) => document.querySelector(s);
-const VERSION = '2.1.0', BUILD_DATE = '25 Nov 2026';
+const VERSION = '2.2.0', BUILD_DATE = '25 Nov 2026';
 
 // ---------------------------------------------------------------- controls
 // ui value → shader param. Defaults reproduce the Dehancer render this look was fitted to.
@@ -28,20 +28,20 @@ const SECTIONS = [
     { id: 'bloomR', label: 'Bloom size', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => 54 * Math.pow(2, (v - 50) / 25) },
   ] },
   { id: 'grainS', title: 'Grain', gauge: true, controls: [
-    { id: 'grain', label: 'Amount', min: 0, max: 100, step: 1, def: 35, fmt: v => v, map: pw(0.10, 35, 1.2) },
+    { id: 'grain', label: 'Amount', min: 0, max: 100, step: 1, def: 35, fmt: v => v, map: pw(0.09, 35, 1.2) },
     { id: 'gsize', label: 'Size', min: 0.5, max: 2.5, step: 0.05, def: 1, fmt: v => (+v).toFixed(2), map: v => +v },
-    { id: 'gchroma', label: 'Colour', min: 0, max: 100, step: 1, def: 20, fmt: v => v, map: v => v / 100 },
+    { id: 'gchroma', label: 'Colour', min: 0, max: 100, step: 1, def: 25, fmt: v => v, map: v => v / 100 },
     { id: 'gtone', label: 'Tone balance', min: -100, max: 100, step: 1, def: 0, fmt: sgn, map: v => v / 100 },
   ] },
   { id: 'lens', title: 'Lens & gate', controls: [
     { id: 'soft', label: 'Softness', min: 0, max: 100, step: 1, def: 40, fmt: v => v, map: v => v / 100 * 3.0 },
-    { id: 'adj', label: 'Edge effect', min: 0, max: 100, step: 1, def: 25, fmt: v => v, map: v => v / 100 },
+    { id: 'adj', label: 'Edge effect', min: 0, max: 100, step: 1, def: 18, fmt: v => v, map: v => v / 100 },
     { id: 'vig', label: 'Vignette', min: 0, max: 100, step: 1, def: 33, fmt: v => v, map: v => v / 100 * 0.5 },
   ], toggle: true },
 ];
 function sgn(v) { return v > 0 ? `+${v}` : `${v}`; }
 const CONTROLS = SECTIONS.flatMap(s => s.controls);
-const KEY = 'film-lab-v3';
+const KEY = 'film-lab-v4';
 const state = { ui: {}, border: true, compare: false, stock: 'yosemite', gauge: '16mm', open: {} };
 function loadSettings() {
   for (const c of CONTROLS) state.ui[c.id] = c.def;
