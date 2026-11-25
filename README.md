@@ -11,6 +11,9 @@ Film-look grading for iPhone video, running entirely in Safari: no app, no uploa
 - Export: frame-exact decode (WebCodecs `VideoDecoder`) → WebGL2 → `VideoEncoder` (H.264, HEVC fallback) → MP4 at the source resolution and frame timing. The original AAC audio is copied byte-for-byte (no re-encode), and the clip's date/location/camera metadata is carried over.
 - Save via the share sheet ("Save Video")
 
+## Privacy
+Your video never leaves the phone. It is read, processed and encoded in the page, and the page's Content-Security-Policy blocks network requests to anywhere except this site's own files. There's no analytics, no third-party code and no server. Exports keep the original clip's metadata (date, location, camera), just as the original file does.
+
 ## The look
 Fitted to a Dehancer render of an iPhone 14 SDR (Rec.709) clip:
 - `assets/film-lab.cube`: 33-point 3D LUT (colour and tone only), fitted on 30 aligned frame pairs. Held-out error is 2.2/255 RMSE; the full app export vs Dehancer gives ΔE76 median 1.4.
