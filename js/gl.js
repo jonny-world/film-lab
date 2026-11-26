@@ -1,9 +1,10 @@
 // film-lab v3 · WebGL2 film pipeline
 // Per frame: film MTF (per-layer softness) → adjustments → halation/bloom pyramid → developer edge effect →
-// dye-cloud grain (in exposure, before the film curve) → film-stock LUT → vignette → film gate.
+// dye-cloud grain (in exposure, before the film curve) → film-stock LUT → vignette → print diffusion → film gate.
 // Spatial sizes are defined for a 2160-px short side and scale with resolution.
 export const LOOK = {
   HAL_T: 0.20, BLOOM_T: 0.50,
+  PAPER_GAMMA: 2.0, PAPER_EMAX: 8.0,  // print diffusion: paper contrast; exposure where the paper reaches D-max (~1.8)
   HAL_NEAR: [1.0, 0.15, 0.04], HAL_FAR: [0.45, 0.14, 0.01], BLOOM_TINT: [1.0, 0.93, 0.84],
   VIG_P: 1.87, BORDER_RGB: [13 / 255, 15 / 255, 19 / 255],
   LAYER_SOFT: [1.25, 1.0, 0.875],  // light scatter per layer (red record sits deepest → softest), after ENS Louis-Lumière 500T fit
@@ -106,13 +107,9 @@ void main(){
   o = vec4(acc, 1.);
 }`;
 
-const FS_FINAL = HEAD + ENERGY + `
-uniform sampler2D u_img, u_glow, u_lum, u_border; uniform sampler3D u_lut;
-uniform vec2 u_frameSize, u_outSize; uniform float u_lutN;
-uniform float u_strength, u_hal, u_bloom, u_gscale, u_adj;
-uniform vec3 u_tNear, u_tFar, u_tBloom;
-uniform float u_rc, u_rf, u_gmix, u_ss, u_grainOn, u_expB, u_expW; uniform uint u_seed; uniform vec3 u_glayer, u_gz, u_base;
-uniform float u_vig, u_vigP, u_borderOn; uniform vec3 u_borderRGB;
+// film gate: 9-sliced 3840×2160 border PNG
+const BORDER = `
+uniform sampler2D u_border; uniform vec2 u_frameSize; uniform float u_borderOn; uniform vec3 u_borderRGB;
 float slice(float q, float D, float P){ const float C = 240.;
   if (q < C) return q; if (q > D - C) return P - (D - q); return C + (q - C)*(P - 2.*C)/max(D - 2.*C, 1.); }
 vec2 borderUV(vec2 fuv){
@@ -121,6 +118,60 @@ vec2 borderUV(vec2 fuv){
   float s = D.y/2160.; vec2 q = p/s, Dq = D/s;
   return vec2(slice(q.x, Dq.x, 3840.), slice(q.y, Dq.y, 2160.)) / vec2(3840.,2160.);
 }
+vec3 gate(vec3 c){ if (u_borderOn > 0.5) { float a = texture(u_border, borderUV(imgUV())).a; c = mix(c, u_borderRGB, a); } return c; }`;
+
+// Print diffusion: a diffuser under the enlarger lens scatters the light projected through the negative.
+// The print's shadows are where most light reaches the paper, so they spread outward into the highlights.
+// Model: undo the paper response to get print exposure E (per channel, capped where the paper hits D-max), blur E,
+// mix, and scale the print by the change in exposure. Deep shadows feed the halo; the image is untouched where E is unchanged.
+const PAPER = `
+uniform float u_pGamma, u_pEmax;
+vec3 toE(vec3 c){ return min(pow(max(dec(c), vec3(1e-6)), vec3(-1./u_pGamma)), vec3(u_pEmax)); }`;
+
+// 13-tap downsample of print exposure (level 0 converts the finished image to exposure)
+const FS_PDOWN = HEAD + PAPER + `
+uniform sampler2D u_img; uniform vec2 u_texel; uniform float u_first, u_scale;
+vec3 tap(vec2 off){ vec3 t = texture(u_img, v_uv + off*u_texel).rgb; return u_first > 0.5 ? toE(t)*u_scale : t; }
+void main(){
+  vec3 e = tap(vec2(0.))*0.125;
+  e += (tap(vec2(-2.,2.))+tap(vec2(2.,2.))+tap(vec2(-2.,-2.))+tap(vec2(2.,-2.)))*0.03125;
+  e += (tap(vec2(0.,2.))+tap(vec2(-2.,0.))+tap(vec2(2.,0.))+tap(vec2(0.,-2.)))*0.0625;
+  e += (tap(vec2(-1.,1.))+tap(vec2(1.,1.))+tap(vec2(-1.,-1.))+tap(vec2(1.,-1.)))*0.125;
+  o = vec4(e, 1.);
+}`;
+
+const FS_PUP = HEAD + `
+uniform sampler2D u_prev, u_lvl; uniform vec2 u_ptexel; uniform float u_w, u_hasPrev;
+void main(){
+  vec3 acc = vec3(0.);
+  if (u_hasPrev > 0.5) {
+    vec2 t = u_ptexel;
+    acc += texture(u_prev, v_uv + vec2(-t.x, t.y)).rgb + texture(u_prev, v_uv + vec2(t.x, t.y)).rgb
+         + texture(u_prev, v_uv + vec2(-t.x,-t.y)).rgb + texture(u_prev, v_uv + vec2(t.x,-t.y)).rgb;
+    acc += 2.*(texture(u_prev, v_uv + vec2(0., t.y)).rgb + texture(u_prev, v_uv + vec2(0.,-t.y)).rgb
+         + texture(u_prev, v_uv + vec2(t.x, 0.)).rgb + texture(u_prev, v_uv + vec2(-t.x, 0.)).rgb);
+    acc += 4.*texture(u_prev, v_uv).rgb;
+    acc /= 16.;
+  }
+  o = vec4(acc + texture(u_lvl, v_uv).rgb*u_w, 1.);
+}`;
+
+const FS_PRINT = HEAD + PAPER + BORDER + `
+uniform sampler2D u_img, u_diff; uniform float u_pd, u_scale;
+void main(){
+  vec3 c = texture(u_img, v_uv).rgb;
+  vec3 E = toE(c), E2 = mix(E, texture(u_diff, v_uv).rgb/u_scale, u_pd);
+  c = enc(min(dec(c)*pow(E2/E, vec3(-u_pGamma)), 1.));
+  o = vec4(clamp(gate(c), 0., 1.), 1.);
+}`;
+
+const FS_FINAL = HEAD + ENERGY + BORDER + `
+uniform sampler2D u_img, u_glow, u_lum; uniform sampler3D u_lut;
+uniform vec2 u_outSize; uniform float u_lutN;
+uniform float u_strength, u_hal, u_bloom, u_gscale, u_adj;
+uniform vec3 u_tNear, u_tFar, u_tBloom;
+uniform float u_rc, u_rf, u_gmix, u_ss, u_grainOn, u_expB, u_expW; uniform uint u_seed; uniform vec3 u_glayer, u_gz, u_base;
+uniform float u_vig, u_vigP;
 // Dye clouds: crisp-edged, mostly opaque, log-normally sized grains scattered in cells. Returns unit-variance texture.
 float dye(vec2 px, float r, uint salt){
   float c = 1.4*r; vec2 cell = floor(px/c); float inv = 1.;
@@ -184,8 +235,7 @@ void main(){
   if (u_expB > 0. || u_expW > 0.) c = expand(c);
   float r = length(fpx - 0.5*u_frameSize)/length(0.5*u_frameSize);
   c = enc(dec(c)*max(1. - u_vig*pow(r, u_vigP), 0.));
-  if (u_borderOn > 0.5) { float a = texture(u_border, borderUV(fuv)).a; c = mix(c, u_borderRGB, a); }
-  o = vec4(clamp(c, 0., 1.), 1.);
+  o = vec4(clamp(gate(c), 0., 1.), 1.);
 }`;
 
 export function halfToFloat(h) { const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, m = h & 1023; return e === 0 ? s * m * 2 ** -24 : e === 31 ? (m ? NaN : s * Infinity) : s * (1 + m / 1024) * 2 ** (e - 15); }
@@ -219,7 +269,8 @@ export class FilmGL {
     this.floatRT = !!gl.getExtension('EXT_color_buffer_float'); gl.getExtension('OES_texture_float_linear');
     const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     this.vao = gl.createVertexArray(); gl.bindVertexArray(this.vao); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    this.p = { softh: this.prog(FS_SOFTH), colour: this.prog(FS_COLOUR), down: this.prog(FS_DOWN), up: this.prog(FS_UP), final: this.prog(FS_FINAL) };
+    this.p = { softh: this.prog(FS_SOFTH), colour: this.prog(FS_COLOUR), down: this.prog(FS_DOWN), up: this.prog(FS_UP), final: this.prog(FS_FINAL),
+      pdown: this.prog(FS_PDOWN), pup: this.prog(FS_PUP), print: this.prog(FS_PRINT) };
     this.src = this.tex2D(); gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
     this.black = this.target(1, 1, false).t;
   }
@@ -295,8 +346,9 @@ export class FilmGL {
       gl.uniform1f(u.u_hasPrev, i === N - 1 ? 0 : 1); gl.uniform2f(u.u_ptexel, i === N - 1 ? 0 : 1 / U[i + 1].w, i === N - 1 ? 0 : 1 / U[i + 1].h);
       gl.uniform3f(u.u_w, wn[i], wb[i], wf[i]); gl.uniform1f(u.u_scale, gsc); draw();
     }
-    // final
-    u = use(this.p.final, null, W, H);
+    // final (into rt.a when print diffusion follows; the gate is then drawn after diffusion so it stays crisp)
+    const diff = (P.pd ?? 0) > 0;
+    u = use(this.p.final, diff ? this.rt.a : null, W, H);
     bind(u, 'u_img', 0, this.rt.b.t); bind(u, 'u_glow', 1, glow ? U[0].t : this.black); bind(u, 'u_lum', 2, D[Math.min(1, N - 1)].t);
     bind(u, 'u_border', 3, this.border); bind(u, 'u_lut', 4, this.lut, gl.TEXTURE_3D);
     gl.uniform2f(u.u_frameSize, frame.w, frame.h); gl.uniform2f(u.u_outSize, W, H); gl.uniform1f(u.u_lutN, this.lutN);
@@ -315,7 +367,22 @@ export class FilmGL {
     gl.uniform3fv(u.u_gz, gz); gl.uniform1f(u.u_grainOn, amt > 0 ? 1 : 0);
     gl.uniform3fv(u.u_base, this.lutBlack); gl.uniform1f(u.u_expB, P.expB ?? 0); gl.uniform1f(u.u_expW, P.expW ?? 0);
     gl.uniform3fv(u.u_glayer, LOOK.LAYER_GRAIN); gl.uniform1ui(u.u_seed, (((seed ?? this.frameNo++) + 1) * 2654435761) >>> 0);
-    gl.uniform1f(u.u_vig, P.vig); gl.uniform1f(u.u_vigP, LOOK.VIG_P); gl.uniform1f(u.u_borderOn, P.border ? 1 : 0); gl.uniform3fv(u.u_borderRGB, LOOK.BORDER_RGB);
+    gl.uniform1f(u.u_vig, P.vig); gl.uniform1f(u.u_vigP, LOOK.VIG_P); gl.uniform1f(u.u_borderOn, P.border && !diff ? 1 : 0); gl.uniform3fv(u.u_borderRGB, LOOK.BORDER_RGB);
+    draw();
+    if (!diff) return;
+    // print diffusion: blur print exposure through the (now free) pyramid, then re-expose the paper
+    const psc = this.floatRT ? 1 : 1 / LOOK.PAPER_EMAX, wp = levelWeights(P.pdR * pxPerOut, N);  // 8-bit targets: exposure scaled into 0..1
+    const paper = (u) => { gl.uniform1f(u.u_pGamma, LOOK.PAPER_GAMMA); gl.uniform1f(u.u_pEmax, LOOK.PAPER_EMAX); gl.uniform1f(u.u_scale, psc); };
+    for (let i = 0; i < N; i++) {
+      const srcT = i === 0 ? this.rt.a : D[i - 1];
+      u = use(this.p.pdown, D[i]); bind(u, 'u_img', 0, srcT.t); gl.uniform2f(u.u_texel, 1 / srcT.w, 1 / srcT.h); gl.uniform1f(u.u_first, i === 0 ? 1 : 0); paper(u); draw();
+    }
+    for (let i = N - 1; i >= 0; i--) {
+      u = use(this.p.pup, U[i]); bind(u, 'u_lvl', 0, D[i].t); bind(u, 'u_prev', 1, i === N - 1 ? this.black : U[i + 1].t);
+      gl.uniform1f(u.u_hasPrev, i === N - 1 ? 0 : 1); gl.uniform2f(u.u_ptexel, i === N - 1 ? 0 : 1 / U[i + 1].w, i === N - 1 ? 0 : 1 / U[i + 1].h); gl.uniform1f(u.u_w, wp[i]); draw();
+    }
+    u = use(this.p.print, null, W, H); bind(u, 'u_img', 0, this.rt.a.t); bind(u, 'u_diff', 1, U[0].t); bind(u, 'u_border', 2, this.border);
+    paper(u); gl.uniform1f(u.u_pd, P.pd); gl.uniform2f(u.u_frameSize, frame.w, frame.h); gl.uniform1f(u.u_borderOn, P.border ? 1 : 0); gl.uniform3fv(u.u_borderRGB, LOOK.BORDER_RGB);
     draw();
   }
 }

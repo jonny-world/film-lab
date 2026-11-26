@@ -1,8 +1,8 @@
-import { FilmGL, parseCube, FORMATS, SPEEDS } from './gl.js?v=2.3.1';
-import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.3.1';
+import { FilmGL, parseCube, FORMATS, SPEEDS } from './gl.js?v=2.4.0';
+import { demux, mux, annexBToAvcc, avcCFromNals } from './mp4.js?v=2.4.0';
 
 const $ = (s) => document.querySelector(s);
-const VERSION = '2.3.1', BUILD_DATE = '25 Nov 2026';
+const VERSION = '2.4.0', BUILD_DATE = '26 Nov 2026';
 
 // ---------------------------------------------------------------- controls
 // ui value → shader param. Defaults reproduce the Dehancer render this look was fitted to.
@@ -28,6 +28,11 @@ const SECTIONS = [
     { id: 'halR', label: 'Halation size', min: 0, max: 100, step: 1, def: 32, fmt: v => v, map: v => 4 * Math.pow(2, (v - 40) / 20) },
     { id: 'bloom', label: 'Bloom', min: 0, max: 100, step: 1, def: 0, fmt: v => v, map: pw(0.15, 30, 1.5) },
     { id: 'bloomR', label: 'Bloom size', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => 54 * Math.pow(2, (v - 50) / 25) },
+  ] },
+  // darkroom print diffusion: shadows spread into the highlights (a diffuser under the enlarger lens)
+  { id: 'print', title: 'Print diffusion', controls: [
+    { id: 'pd', label: 'Amount', min: 0, max: 100, step: 1, def: 0, fmt: v => v, map: v => 0.3 * v / 100 },
+    { id: 'pdR', label: 'Size', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => 40 * Math.pow(2, (v - 50) / 25) },
   ] },
   { id: 'grainS', title: 'Grain', profile: true, controls: [
     { id: 'grain', label: 'Amount', min: 0, max: 100, step: 1, def: 50, fmt: v => v, map: v => v / 50 },
@@ -58,7 +63,7 @@ function loadSettings() {
 function saveSettings() { try { localStorage.setItem(KEY, JSON.stringify({ ui: state.ui, border: state.border, stock: state.stock, format: state.format, speed: state.speed, open: state.open })); } catch {} }
 function params() {
   const P = {}; for (const c of CONTROLS) P[c.id] = c.map(state.ui[c.id]); P.border = state.border; P.format = state.format; P.speed = state.speed; P.soft = P.res;
-  if (state.compare) Object.assign(P, { strength: 0, expB: 0, expW: 0, ev: 0, temp: 0, tint: 0, con: 0, hl: 0, sh: 0, bl: 0, sat: 0, hal: 0, bloom: 0, grain: 0, soft: 0, adj: 0, vig: 0, border: false });
+  if (state.compare) Object.assign(P, { strength: 0, expB: 0, expW: 0, ev: 0, temp: 0, tint: 0, con: 0, hl: 0, sh: 0, bl: 0, sat: 0, hal: 0, bloom: 0, pd: 0, grain: 0, soft: 0, adj: 0, vig: 0, border: false });
   return P;
 }
 function buildControls() {
